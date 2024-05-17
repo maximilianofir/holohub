@@ -20,11 +20,103 @@ from argparse import ArgumentParser
 import cupy as cp
 import holoscan as hs
 import numpy as np
+from copy import deepcopy
 from holoscan.core import Application, Operator, OperatorSpec
 from holoscan.gxf import Entity
 from holoscan.operators import FormatConverterOp, HolovizOp, InferenceOp, V4L2VideoCaptureOp
 from holoscan.resources import UnboundedAllocator
 
+
+class DecoderInputData:
+    def __init__(self, image_embeddings=None, point_coords=None, point_labels=None, mask_input=None, has_mask_input=None, orig_im_size=None):
+        self.image_embeddings = image_embeddings
+        self.point_coords = point_coords
+        self.point_labels = point_labels
+        self.mask_input = mask_input
+        self.has_mask_input = has_mask_input
+        self.orig_im_size = orig_im_size
+
+    def __repr__(self) -> str:
+        return f"DecoderInputData(image_embeddings={self.image_embeddings}, point_coords={self.point_coords}, point_labels={self.point_labels}, mask_input={self.mask_input}, has_mask_input={self.has_mask_input}, orig_im_size={self.orig_im_size})"
+
+    @staticmethod
+    def create_decoder_inputs_from(input_point=None, input_label=None, input_box=None, box_labels=None):
+        input_point = input_point
+        input_label = input_label
+        input_box = input_box
+        box_labels = box_labels
+        if input_point is None:
+            input_point = np.array([[1000, 600]])
+        if input_label is None:
+            input_label = np.array([1])
+        if input_box is None:
+            input_box = np.array([800, 150, 1250, 800])
+        if box_labels is None:
+            box_labels = np.array([2, 3])
+
+        onnx_box_coords = input_box.reshape(2, 2)
+        onnx_box_labels = box_labels
+
+        onnx_coord = np.concatenate([input_point, onnx_box_coords], axis=0)[None, :, :]
+        onnx_label = np.concatenate([input_label, onnx_box_labels], axis=0)[None, :].astype(np.float32)
+
+        onnx_mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
+        onnx_has_mask_input = np.zeros(1, dtype=np.float32)
+
+        return DecoderInputData(
+            point_coords=onnx_coord,
+            point_labels=onnx_label,
+            mask_input=onnx_mask_input,
+            has_mask_input=onnx_has_mask_input,
+        )
+
+    @staticmethod
+    def scale_coords(coords: np.ndarray, orig_height=1024, orig_width=1024, resized_height=1024, resized_width=1024) -> np.ndarray:
+        """
+        Expects a numpy array of length 2 in the final dimension
+        """
+        old_h, old_w = orig_height, orig_width
+        new_h, new_w = resized_height, resized_width
+        coords = deepcopy(coords).astype(float)
+        coords[..., 0] = coords[..., 0] * (new_w / old_w)
+        coords[..., 1] = coords[..., 1] * (new_h / old_h)
+        return coords.astype(np.float32)
+
+
+class DecoderConfigurator(Operator):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Output tensor names
+        self.outputs = [
+            "image_embeddings", "point_coords", "point_labels", "mask_input", "has_mask_input", "orig_im_size"
+        ]
+        self.decoder_input = DecoderInputData.create_decoder_inputs_from()
+        self.decoder_input.point_coords = DecoderInputData.scale_coords(self.decoder_input.point_coords, orig_height=1024, orig_width=1024, resized_height=1024, resized_width=1024)
+        self.decoder_input.orig_im_size = np.array([1024, 1024], dtype=np.float32)
+
+    def setup(self, spec: OperatorSpec):
+        spec.input("in")
+        spec.output("out")
+
+    def compute(self, op_input, op_output, context):
+        print(self.decoder_input)
+        # Get input message
+        in_message = op_input.receive("in")
+        print(in_message)
+        print(in_message.get("image_embeddings"))
+        data = {
+            "image_embeddings": in_message.get("image_embeddings"),
+            "point_coords": self.decoder_input.point_coords,
+            "point_labels": self.decoder_input.point_labels,
+            "mask_input": self.decoder_input.mask_input,
+            "has_mask_input": self.decoder_input.has_mask_input,
+            "orig_im_size": self.decoder_input.orig_im_size
+        }
+        # Create output message
+        out_message = Entity(context)
+        for output in self.outputs:
+            out_message.add(hs.as_tensor(data[output]), output)
+        op_output.emit(out_message, "out")
 
 class FormatInferenceInputOp(Operator):
     """Operator to format input image for inference"""
@@ -39,24 +131,26 @@ class FormatInferenceInputOp(Operator):
     def compute(self, op_input, op_output, context):
         # Get input message
         in_message = op_input.receive("in")
+        print(in_message)
+        print(in_message.get("preprocessed"))
 
         # Transpose
         tensor = cp.asarray(in_message.get("preprocessed")).get()
-        # OBS: Numpy conversion and moveaxis is needed to avoid strange
-        # strides issue when doing inference
+        print(tensor.shape)
+        # # OBS: Numpy conversion and moveaxis is needed to avoid strange
+        # # strides issue when doing inference
         tensor = np.moveaxis(tensor, 2, 0)[None]
         tensor = cp.asarray(tensor)
+        print(tensor.shape)
 
         # Create output message
         out_message = Entity(context)
-        out_message.add(hs.as_tensor(tensor), "preprocessed")
+        out_message.add(hs.as_tensor(tensor), "encoder_tensor")
         op_output.emit(out_message, "out")
 
 
 class PostprocessorOp(Operator):
     """Operator to post-process inference output:
-    * Non-max suppression
-    * Make boxes compatible with Holoviz
 
     """
 
@@ -85,6 +179,13 @@ class PostprocessorOp(Operator):
         spec.param("image_dim", None)
 
     def compute(self, op_input, op_output, context):
+        # Get input message
+        in_message = op_input.receive("in")
+        print(in_message)
+        # Convert input to cupy array
+        results = cp.asarray(in_message.get("decoder_output"))
+        print(type(results))
+        print(results.shape)
         return
 
 
@@ -97,7 +198,7 @@ class SegmentOneThingApp(Application):
         super().__init__()
 
         # set name
-        self.name = "Body Pose Estimation App"
+        self.name = "Segment one thing App"
         self.source = source
 
         if data == "none":
@@ -133,16 +234,33 @@ class SegmentOneThingApp(Application):
             **preprocessor_args,
         )
 
-        inference_args = self.kwargs("inference")
-        inference_args["model_path_map"] = {
-            "yolo_pose": os.path.join(self.sample_data_path, "yolov8l-pose.onnx")
+        inference_encoder_args = self.kwargs("inference")
+        inference_encoder_args["model_path_map"] = {
+            "encoder": os.path.join("applications", "segment_everything", "onnx", "encoder.engine"), 
         }
 
         inference = InferenceOp(
             self,
             name="inference",
             allocator=pool,
-            **inference_args,
+            **inference_encoder_args,
+        )
+
+        decoder_configurator = DecoderConfigurator(
+            self,
+            allocator=pool
+            )
+
+
+        inference_decoder_args = self.kwargs("inference_decoder")
+        inference_decoder_args["model_path_map"] = {
+            "decoder": os.path.join("applications", "segment_everything", "onnx", "decoder.engine"), 
+        }
+        inference_decoder = InferenceOp(
+            self,
+            name="inference_decoder",
+            allocator=pool,
+            **inference_decoder_args,
         )
 
         postprocessor_args = self.kwargs("postprocessor")
@@ -158,9 +276,16 @@ class SegmentOneThingApp(Application):
 
         self.add_flow(source, holoviz, {(source_output, "receivers")})
         self.add_flow(source, preprocessor)
+        # self.add_flow(preprocessor, holoviz), {("", "receivers")}
         self.add_flow(preprocessor, format_input)
+        # self.add_flow(format_input, holoviz, {("out", "receivers")})
         self.add_flow(format_input, inference, {("", "receivers")})
-        self.add_flow(inference, postprocessor, {("transmitter", "in")})
+        # self.add_flow(preprocessor, inference, {("", "receivers")})
+        # self.add_flow(inference, postprocessor), {"transmitter", "in"}
+        self.add_flow(inference, decoder_configurator, {("transmitter", "in")})
+        self.add_flow(decoder_configurator, inference_decoder, {("out", "receivers")})
+        # self.add_flow(decoder_configurator, postprocessor, {("out", "in")})
+        self.add_flow(inference_decoder, postprocessor, {("transmitter", "in")})
         self.add_flow(postprocessor, holoviz, {("out", "receivers")})
 
 

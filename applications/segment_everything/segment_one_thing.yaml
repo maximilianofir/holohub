@@ -15,38 +15,46 @@
 # limitations under the License.
 ---
 v4l2_source:
-  device: "/dev/video3"
+  device: "/dev/video1"
 
 
 preprocessor:
   out_tensor_name: preprocessed
-  out_dtype: "float32"
-  resize_width: 640
-  resize_height: 640
+  # out_dtype: "float32"
+  resize_width: 1024
+  resize_height: 1024
   scale_min: 0.0
   scale_max: 1.0
+  in_dtype: "rgba8888"
+  out_dtype: "rgb888"
 
 inference:
   backend: "trt"
   pre_processor_map:
-    "yolo_pose": ["preprocessed"]
+    "encoder": ["encoder_tensor"]
   inference_map:
-    "yolo_pose": ["inference_output"]
+    "encoder": ["image_embeddings"]
   input_on_cuda: true
-  is_engine_path: false
+  is_engine_path: true
+
+
+inference_decoder:
+  backend: "trt"
+  pre_processor_map:
+    "decoder": ["image_embeddings", "point_coords", "point_labels", "mask_input", "has_mask_input", "orig_im_size"]
+  inference_map:
+    "decoder": ["decoder_output"]
+  input_on_cuda: true
+  is_engine_path: true
 
 postprocessor:
   iou_threshold: 0.5
   score_threshold: 0.5
-  image_dim: 640
+  image_dim: 1024
 
 holoviz:
   tensors:
     - name: ""
       type: color
-    - name: boxes
-      type: rectangles
-      line_width: 4
-      color: [0.0, 1.0, 0.0, 1.0]
-      opacity: 0
+
 
