@@ -29,8 +29,8 @@ from holoscan.resources import UnboundedAllocator
 class FormatInferenceInputOp(Operator):
     """Operator to format input image for inference"""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, fragment, *args, **kwargs):
+        super().__init__(fragment, *args, **kwargs)
 
     def setup(self, spec: OperatorSpec):
         spec.input("in")
@@ -41,16 +41,13 @@ class FormatInferenceInputOp(Operator):
         in_message = op_input.receive("in")
 
         # Transpose
-        tensor = cp.asarray(in_message.get("preprocessed")).get()
-        # OBS: Numpy conversion and moveaxis is needed to avoid strange
-        # strides issue when doing inference
-        tensor = np.moveaxis(tensor, 2, 0)[None]
-        tensor = cp.asarray(tensor)
+        tensor = cp.asarray(in_message.get("preprocessed"))
+        tensor = cp.moveaxis(tensor, 2, 0)[cp.newaxis]
+        # Copy as a contiguous array to avoid issue with strides
+        tensor = cp.ascontiguousarray(tensor)
 
         # Create output message
-        out_message = Entity(context)
-        out_message.add(hs.as_tensor(tensor), "preprocessed")
-        op_output.emit(out_message, "out")
+        op_output.emit(dict(preprocessed=tensor), "out")
 
 
 class PostprocessorOp(Operator):
@@ -339,13 +336,19 @@ class BodyPoseEstimationApp(Application):
 
         if data == "none":
             data = os.path.join(
-                os.environ.get("HOLOSCAN_DATA_PATH", "../data"), "body_pose_estimation"
+                os.environ.get("HOLOHUB_DATA_PATH", "../data"), "body_pose_estimation"
             )
 
         self.sample_data_path = data
 
     def compose(self):
         pool = UnboundedAllocator(self, name="pool")
+
+        # Determine if the DDS Publisher is enabled.
+        dds_common_args = self.kwargs("dds_common")
+        dds_publisher_args = dds_common_args | self.kwargs("dds_publisher")
+        enable_dds_publisher = dds_publisher_args["enable"]
+        del dds_publisher_args["enable"]
 
         if self.source == "v4l2":
             source = V4L2VideoCaptureOp(
@@ -360,16 +363,16 @@ class BodyPoseEstimationApp(Application):
                 from holohub.dds_video_subscriber import DDSVideoSubscriberOp
             except ImportError:
                 print(
-                    "ERROR: Can not import DDSVideoSubscriper module. Please ensure that "
-                    "the DDS operators have been built (this can be done by building the "
-                    "'dds_video' application)."
+                    "ERROR: Can not import DDSVideoSubscriper module. Please make sure to "
+                    "build this application using the '--with dds_video_subscriber' option."
                 )
                 sys.exit(1)
+            dds_source_args = dds_common_args | self.kwargs("dds_source")
             source = DDSVideoSubscriberOp(
                 self,
                 name="dds_source",
                 allocator=pool,
-                **self.kwargs("dds_source"),
+                **dds_source_args,
             )
             source_output = "output"
 
@@ -409,7 +412,26 @@ class BodyPoseEstimationApp(Application):
             **postprocessor_args,
         )
 
-        holoviz = HolovizOp(self, allocator=pool, name="holoviz", **self.kwargs("holoviz"))
+        holoviz_args = self.kwargs("holoviz")
+        if enable_dds_publisher:
+            holoviz_args["headless"] = True
+            holoviz_args["enable_render_buffer_output"] = True
+        holoviz = HolovizOp(self, allocator=pool, name="holoviz", **holoviz_args)
+
+        if enable_dds_publisher:
+            try:
+                from holohub.dds_video_publisher import DDSVideoPublisherOp
+            except ImportError:
+                print(
+                    "ERROR: Can not import DDSVideoPublisher module. Please make sure to "
+                    "build this application using the '--with dds_video_publisher' option."
+                )
+                sys.exit(1)
+            dds_publisher = DDSVideoPublisherOp(
+                self,
+                name="dds_publisher",
+                **dds_publisher_args,
+            )
 
         self.add_flow(source, holoviz, {(source_output, "receivers")})
         self.add_flow(source, preprocessor)
@@ -417,6 +439,8 @@ class BodyPoseEstimationApp(Application):
         self.add_flow(format_input, inference, {("", "receivers")})
         self.add_flow(inference, postprocessor, {("transmitter", "in")})
         self.add_flow(postprocessor, holoviz, {("out", "receivers")})
+        if enable_dds_publisher:
+            self.add_flow(holoviz, dds_publisher, {("render_buffer_output", "input")})
 
 
 if __name__ == "__main__":

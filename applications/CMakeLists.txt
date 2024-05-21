@@ -20,7 +20,8 @@ add_holohub_application(adv_networking_bench DEPENDS
 add_holohub_application(basic_networking_ping DEPENDS
                         OPERATORS basic_network)
 
-add_holohub_application(body_pose_estimation)
+add_holohub_application(body_pose_estimation DEPENDS
+                        OPERATORS OPTIONAL dds_video_subscriber dds_video_publisher)
 
 add_holohub_application(colonoscopy_segmentation)
 
@@ -92,6 +93,12 @@ add_holohub_application(volume_rendering_xr DEPENDS
                                   volume_renderer
                                   XrFrameOp
                                   XrTransformOp)
+
+add_holohub_application(xr_hello_holoscan DEPENDS
+                        OPERATORS volume_renderer # for nlohmann_json dependency
+                                  XrFrameOp
+                                  XrTransformOp
+                                  xr_basic_render)
 
 add_holohub_application(webrtc_video_server)
 
