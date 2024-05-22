@@ -20,7 +20,7 @@ v4l2_source:
 
 preprocessor:
   out_tensor_name: preprocessed
-  # out_dtype: "float32"
+  out_dtype: "float32"
   resize_width: 1024
   resize_height: 1024
   scale_min: 0.0
@@ -41,11 +41,18 @@ inference:
 inference_decoder:
   backend: "trt"
   pre_processor_map:
-    "decoder": ["image_embeddings", "point_coords", "point_labels", "mask_input", "has_mask_input", "orig_im_size"]
+    "decoder": [
+      "image_embeddings",
+      "point_coords",
+      "point_labels",
+      "mask_input",
+      "has_mask_input"
+      ]
   inference_map:
     "decoder": ["decoder_output"]
   input_on_cuda: true
   is_engine_path: true
+  enable_fp16: true
 
 postprocessor:
   iou_threshold: 0.5
