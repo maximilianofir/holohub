@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import os
-import sys
 from argparse import ArgumentParser
 import matplotlib.pyplot as plt
 
@@ -25,22 +24,32 @@ import numpy as np
 from copy import deepcopy
 from holoscan.core import Application, Operator, OperatorSpec
 from holoscan.gxf import Entity
-from holoscan.operators import FormatConverterOp, HolovizOp, InferenceOp, V4L2VideoCaptureOp, SegmentationPostprocessorOp
-from holoscan.resources import UnboundedAllocator, CudaStreamPool
+from holoscan.operators import FormatConverterOp, HolovizOp, InferenceOp, V4L2VideoCaptureOp
+from holoscan.resources import UnboundedAllocator
 
-def save_cupy_tensor(tensor, folder_path, counter=0, word=""):
-    # print(tensor.flags)
+
+def save_cupy_tensor(tensor, folder_path, counter=0, word="", verbose=False):
     if not os.path.exists(folder_path):
         os.makedirs(folder_path)
-    # np_tensor = cp.asnumpy(tensor)
-    file_path = os.path.join(folder_path, f"{word}_{counter}.npy") 
+    file_path = os.path.join(folder_path, f"{word}_{counter}.npy")
     cp.save(file_path, tensor)
-    print(f"Saved tensor to {file_path} \n")
-    print(f"tensor dtype is {tensor.dtype}")
+    if verbose:
+        print(f"Saved tensor to {file_path} \n")
+        print(f"tensor dtype is {tensor.dtype}")
+
 
 class DecoderInputData:
-    def __init__(self, image_embeddings=None, point_coords=None, point_labels=None, mask_input=None, has_mask_input=None, orig_im_size=None, dtype=np.float32):
-        
+    def __init__(
+        self,
+        image_embeddings=None,
+        point_coords=None,
+        point_labels=None,
+        mask_input=None,
+        has_mask_input=None,
+        orig_im_size=None,
+        dtype=np.float32,
+    ):
+
         self.image_embeddings = image_embeddings
         self.point_coords = point_coords
         self.point_labels = point_labels
@@ -48,7 +57,7 @@ class DecoderInputData:
         self.has_mask_input = has_mask_input
         self.orig_im_size = orig_im_size
         self.dtype = dtype
-    
+
     def print_ndims(self):
         for key, value in self.__dict__.items():
             if value is not None:
@@ -59,8 +68,8 @@ class DecoderInputData:
 
     @staticmethod
     def point_coords(point=None):
-        if point is None: 
-            point = (500,500)
+        if point is None:
+            point = (500, 500)
         input_point = np.array([point], dtype=np.float32)
         input_label = np.array([1], dtype=np.float32)
         zero_point = np.zeros((1, 2), dtype=np.float32)
@@ -71,23 +80,15 @@ class DecoderInputData:
         return coord, label
 
     @staticmethod
-    def create_decoder_inputs_from(input_point=None, input_label=None, input_box=None, box_labels=None, dtype=np.float32):
-        # input_point = input_point
-        # input_label = input_label
-        # if input_point is None:
-        #     input_point = np.array([[500, 500], [500, 500]], dtype=dtype)
-        # if input_label is None:
-        #     input_label = np.array([1, 1], dtype=dtype)
-        # if input_box is None:
-        #     input_box = np.array([800, 150, 1250, 800], dtype=dtype)
-        # if box_labels is None:
-        #     box_labels = np.array([2, 3], dtype=dtype)
+    def create_decoder_inputs_from(
+        input_point=None, input_label=None, input_box=None, box_labels=None, dtype=np.float32
+    ):
+
         onnx_coord, onnx_label = DecoderInputData.point_coords(input_point)
         if input_box is not None:
             input_box = input_box.reshape(2, 2)
             onnx_coord = np.concatenate([onnx_coord, input_box], axis=0)[None, :, :]
             onnx_label = np.concatenate([onnx_label, box_labels], axis=0)[None, :].astype(dtype)
-
 
         onnx_mask_input = np.zeros((1, 1, 256, 256), dtype=dtype)
         onnx_has_mask_input = np.zeros((1, 1, 1, 1), dtype=dtype)
@@ -99,11 +100,18 @@ class DecoderInputData:
             point_labels=onnx_label,
             mask_input=onnx_mask_input,
             has_mask_input=onnx_has_mask_input,
-            dtype=dtype
+            dtype=dtype,
         )
 
     @staticmethod
-    def scale_coords(coords: np.ndarray, orig_height=1024, orig_width=1024, resized_height=1024, resized_width=1024, dtype=np.float32) -> np.ndarray:
+    def scale_coords(
+        coords: np.ndarray,
+        orig_height=1024,
+        orig_width=1024,
+        resized_height=1024,
+        resized_width=1024,
+        dtype=np.float32,
+    ) -> np.ndarray:
         """
         Expects a numpy array of length 2 in the final dimension
         """
@@ -116,21 +124,36 @@ class DecoderInputData:
 
 
 class DecoderConfigurator(Operator):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, save_intermediate=False, verbose=False, **kwargs):
         super().__init__(*args, **kwargs)
         if "input_point" in kwargs:
             input_point = kwargs["input_point"]
         else:
             input_point = None
+        self.verbose = verbose
+        self.save_intermediate = save_intermediate
         # Output tensor names
         self.outputs = [
-            "image_embeddings", "point_coords", "point_labels", "mask_input", "has_mask_input"
+            "image_embeddings",
+            "point_coords",
+            "point_labels",
+            "mask_input",
+            "has_mask_input",
         ]
         self.viz_outputs = ["point_coords"]
-        self.decoder_input = DecoderInputData.create_decoder_inputs_from(dtype=np.float32, input_point=input_point)
+        self.decoder_input = DecoderInputData.create_decoder_inputs_from(
+            dtype=np.float32, input_point=input_point
+        )
         print(f"created inputs {self.decoder_input}")
         print(self.decoder_input)
-        self.decoder_input.point_coords = DecoderInputData.scale_coords(self.decoder_input.point_coords, orig_height=1024, orig_width=1024, resized_height=1024, resized_width=1024,dtype=np.float32)
+        self.decoder_input.point_coords = DecoderInputData.scale_coords(
+            self.decoder_input.point_coords,
+            orig_height=1024,
+            orig_width=1024,
+            resized_height=1024,
+            resized_width=1024,
+            dtype=np.float32,
+        )
         print(f"after scaling {self.decoder_input}")
         self.decoder_input.orig_im_size = np.array([1024, 1024], dtype=np.float32)
         print("---------------------init Decoder Config complete")
@@ -140,17 +163,20 @@ class DecoderConfigurator(Operator):
         spec.output("out")
         # spec.output("point")
 
-    def compute(self, op_input, op_output, context, verbose=1):
-        print("--------------------------------------- Decoder Config compute")
+    def compute(self, op_input, op_output, context):
         in_message = op_input.receive("in")
 
         image_tensor = cp.asarray(in_message.get("image_embeddings"), order="C")
-        # save the image embeddings
-        save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=image_tensor, word="image_embeddings")
-        # image_tensor = image_tensor.astype(cp.float32)
-        # image_tensor = cp.ascontiguousarray(image_tensor)
+        if self.save_intermediate:
+            # save the image embeddings
+            save_cupy_tensor(
+                folder_path="applications/segment_everything/downloads/numpy",
+                tensor=image_tensor,
+                word="image_embeddings",
+                verbose=self.verbose,
+            )
 
-        if verbose > 0:
+        if self.verbose:
             print(image_tensor.shape, image_tensor.dtype)
             print(self.decoder_input)
             # Get input message
@@ -165,43 +191,41 @@ class DecoderConfigurator(Operator):
             "has_mask_input": cp.asarray(self.decoder_input.has_mask_input, order="C"),
             # "orig_im_size": self.decoder_input.orig_im_sizep
         }
-        print("--------------------------------------- Decoder Config compute end")
 
         # Create output message
         out_message = Entity(context)
         for i, output in enumerate(self.outputs):
-            print(i, output)
-            print(f"added {output} to message, device: {data[output].device}")
             out_message.add(hs.as_tensor(data[output]), output)
         op_output.emit(out_message, "out")
 
-        # out_message_viz = Entity(context)
-        # for output in self.viz_outputs:
-        #     out_message_viz.add(hs.as_tensor(data[output]), output)
-        # op_output.emit(out_message, "point")
 
 class FormatInferenceInputOp(Operator):
     """Operator to format input image for inference"""
 
-    def __init__(self, *args, mean=None, std=None, **kwargs):
+    def __init__(
+        self, *args, mean=None, std=None, save_intermediate=False, verbose=False, **kwargs
+    ):
         super().__init__(*args, **kwargs)
+        self.verbose = verbose
         self.mean = mean
         self.std = std
         if self.mean is None:
             self.mean = cp.array([123.675, 116.28, 103.53])
         if self.std is None:
             self.std = cp.array([58.395, 57.12, 57.375])
+        self.save_intermediate = save_intermediate
 
     def setup(self, spec: OperatorSpec):
         spec.input("in")
         spec.output("out")
 
     def compute(self, op_input, op_output, context):
-        print("----------------------------------Inference Input")
         # Get input message
         in_message = op_input.receive("in")
-        print(in_message)
-        print(in_message.get("preprocessed"))
+        if self.verbose:
+            print("----------------------------------Inference Input")
+            print(in_message)
+            print(in_message.get("preprocessed"))
 
         # Transpose
         # Transpose
@@ -210,74 +234,77 @@ class FormatInferenceInputOp(Operator):
         tensor = self.normalize_image(tensor)
         # reshape
         tensor = np.moveaxis(tensor, 2, 0)[np.newaxis]
-        tensor= cp.asarray(tensor, order="C", dtype=cp.float32)
-
-        # Copy as a contiguous array to avoid issue with strides
+        tensor = cp.asarray(tensor, order="C", dtype=cp.float32)
         tensor = cp.ascontiguousarray(tensor)
-        # tensor = cp.asarray(in_message.get("preprocessed"))
-        # print(tensor.shape)
-        # # # OBS: Numpy conversion and moveaxis is needed to avoid strange
-        # # # strides issue when doing inference
-        # tensor = cp.expand_dims(cp.moveaxis(tensor, 2, 0), 0)
-        # print(tensor.flags)
-        # tensor = cp.ascontiguousarray(tensor)
-        # print(tensor.flags)
 
-        #saving input
-        save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=tensor, word="input")
-        print(f"---------------------------reformatted tensor shape: {tensor.shape}")
+        # saving input
+        if self.save_intermediate:
+            save_cupy_tensor(
+                folder_path="applications/segment_everything/downloads/numpy",
+                tensor=tensor,
+                word="input",
+                verbose=self.verbose,
+            )
+        if self.verbose:
+            print(f"---------------------------reformatted tensor shape: {tensor.shape}")
 
         # Create output message
         op_output.emit(dict(encoder_tensor=tensor), "out")
-
-        # # Create output message
-        # out_message = Entity(context)
-        # out_message.add(hs.as_tensor(tensor), "encoder_tensor")
-        # op_output.emit(out_message, "out")
 
     def normalize_image(self, image):
         image = (image - self.mean) / self.std
         return image
 
+
 class Sink(Operator):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, save_intermediate=False, verbose=True, **kwargs):
         super().__init__(*args, **kwargs)
+        self.save_intermediate = save_intermediate
+        self.verbose = verbose
 
     def setup(self, spec: OperatorSpec):
         spec.input("in")
 
-    def compute(self, op_input, op_output,  context):
+    def compute(self, op_input, op_output, context):
         in_message = op_input.receive("in")
-        print("----------------------------SINK Start")
-        print(in_message)
-        try:
-            print(type(in_message))
-            if isinstance(in_message, dict):
-                for key, value in in_message.items():
-                    print(f"{key}: {type(value)}")
-                    try:
-                        tensor = in_message.get(f"{key}")
-                        print(tensor.shape)
-                        print(tensor.dtype)
-                        # get a cupy tensor from the message and save it to a numpy array, using the key
+        if self.verbose:
+            print("----------------------------SINK Start")
+            print(in_message)
+            try:
+                print(type(in_message))
+                if isinstance(in_message, dict):
+                    for key, value in in_message.items():
+                        print(f"{key}: {type(value)}")
                         try:
-                            cupy_array = cp.asarray(tensor)
-                            save_cupy_tensor(cupy_array, folder_path="applications/segment_everything/downloads/numpy", counter=0, word=key)
+                            tensor = in_message.get(f"{key}")
+                            print(tensor.shape)
+                            print(tensor.dtype)
+                            # get a cupy tensor from the message and save it to a numpy array, using the key
+                            if self.save_intermediate:
+                                try:
+                                    cupy_array = cp.asarray(tensor)
+                                    save_cupy_tensor(
+                                        cupy_array,
+                                        folder_path="applications/segment_everything/downloads/numpy",
+                                        counter=0,
+                                        word=key,
+                                        verbose=self.verbose,
+                                    )
+                                except Exception as e:
+                                    print(f"Could not save cupy array {e}")
+
                         except Exception as e:
-                            print(f"Could not save cupy array {e}")
+                            print(f"Could not get key {e}")
+            except Exception as e:
+                print(f"Could not get type, exception {e}")
 
-                    except Exception as e:
-                        print(f"Could not get key {e}")
-        except Exception as e:
-            print(f"Could not get type, exception {e}")
+            print("---------------------------SINK END")
 
-        print("---------------------------SINK END")
 
 class CupyArrayPainter:
     def __init__(self, colormap: cp.ndarray = None):
         if colormap is None:
-            import matplotlib.pyplot as plt
-            colormap = plt.get_cmap('viridis')
+            colormap = plt.get_cmap("viridis")
             colormap = colormap(np.linspace(0, 1, 256))
             colormap = cp.asarray(colormap * 255, dtype=cp.uint8)
         self.colormap = colormap
@@ -301,21 +328,22 @@ class CupyArrayPainter:
         rgba_image = self.apply_colormap(normalized_data)
         return rgba_image
 
-class PostprocessorOp(Operator):
-    """Operator to post-process inference output:
-    """
 
-    def __init__(self, *args, **kwargs):
+class PostprocessorOp(Operator):
+    """Operator to post-process inference output:"""
+
+    def __init__(self, *args, save_intermediate=False, verbose=False, **kwargs):
         super().__init__(*args, **kwargs)
         # Output tensor names
         self.outputs = ["out_tensor"]
-        self.slice_dim = 3     
+        self.slice_dim = 3
         self.transpose_tuple = None
         self.threshold = None
         self.cast_to_uint8 = False
         self.counter = 0
         self.painter = CupyArrayPainter()
-
+        self.save_intermediate = save_intermediate
+        self.verbose = verbose
 
     def setup(self, spec: OperatorSpec):
         """
@@ -327,6 +355,7 @@ class PostprocessorOp(Operator):
         """
         spec.input("in")
         spec.output("out")
+
     def mask_to_rgba(self, tensor, channel_dim=-1, color=None):
         """convert a tensor of shape (1, 1, 1024, 1024) to a tensor of shape (1, 3, 1024, 1024) by repeating the tensor along the channel dimension
         assuming the input tensor is a mask tensor, containing 0s and 1s.
@@ -342,76 +371,122 @@ class PostprocessorOp(Operator):
         Returns:
             _type_: _description_
         """
-        # check that the length of the color is 4 
+        # check that the length of the color is 4
         if color is None:
             color = cp.array([255, 255, 0, 128], dtype=cp.uint8)
         assert len(color) == 4, "Color should be a tuple of length 4"
-        tensor = cp.concatenate([tensor]*4, axis=channel_dim)
+        tensor = cp.concatenate([tensor] * 4, axis=channel_dim)
         tensor[tensor == 1] = color
         return tensor
 
     def compute(self, op_input, op_output, context):
         # Get input message
         in_message = op_input.receive("in")
-        print(in_message)
         # Convert input to cupy array
         results = cp.asarray(in_message.get("low_res_masks"))
-        save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=results, counter=self.counter, word="low_res_masks")
-        print(results.flags)
-        print("-------------------postprocessing")
-        print(type(results))
-        print(results.shape)
+        if self.save_intermediate:
+            save_cupy_tensor(
+                folder_path="applications/segment_everything/downloads/numpy",
+                tensor=results,
+                counter=self.counter,
+                word="low_res_masks",
+                verbose=self.verbose,
+            )
+        if self.verbose:
+            print(results.flags)
+            print("-------------------postprocessing")
+            print(type(results))
+            print(results.shape)
 
         # scale the tensor
         scaled_tensor = self.scale_tensor_with_aspect_ratio(results, 1024)
-        print(f"Scaled tensor {scaled_tensor.shape}\n") 
-        print(scaled_tensor.flags)
-        save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=scaled_tensor, counter=self.counter, word="scaled")
+        if self.verbose:
+            print(f"Scaled tensor {scaled_tensor.shape}\n")
+            print(scaled_tensor.flags)
+        if self.save_intermediate:
+            save_cupy_tensor(
+                folder_path="applications/segment_everything/downloads/numpy",
+                tensor=scaled_tensor,
+                counter=self.counter,
+                word="scaled",
+                verbose=self.verbose,
+            )
 
         # undo padding
         unpadded_tensor = self.undo_pad_on_tensor(scaled_tensor, (1024, 1024)).astype(cp.float32)
-        print(f"unpadded tensor {unpadded_tensor.shape}\n")
-        print(unpadded_tensor.flags)
+        if self.verbose:
+            print(f"unpadded tensor {unpadded_tensor.shape}\n")
+            print(unpadded_tensor.flags)
 
         if self.slice_dim is not None:
             unpadded_tensor = unpadded_tensor[:, self.slice_dim, :, :]
             unpadded_tensor = cp.expand_dims(unpadded_tensor, 1).astype(cp.float32)
-            print(unpadded_tensor.flags)
-            save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=unpadded_tensor, counter=self.counter, word="sliced")
 
-            
+            if self.save_intermediate:
+                save_cupy_tensor(
+                    folder_path="applications/segment_everything/downloads/numpy",
+                    tensor=unpadded_tensor,
+                    counter=self.counter,
+                    word="sliced",
+                    verbose=self.verbose,
+                )
+
         if self.transpose_tuple is not None:
             unpadded_tensor = cp.transpose(unpadded_tensor, self.transpose_tuple).astype(cp.float32)
-            print(unpadded_tensor.flags)
-            save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=unpadded_tensor, counter=self.counter, word="transposed")
+
+            if self.save_intermediate:
+                save_cupy_tensor(
+                    folder_path="applications/segment_everything/downloads/numpy",
+                    tensor=unpadded_tensor,
+                    counter=self.counter,
+                    word="transposed",
+                    verbose=self.verbose,
+                )
 
         # threshold the tensor
         if self.threshold is not None:
             unpadded_tensor = cp.where(unpadded_tensor > self.threshold, 1, 0).astype(cp.float32)
-            print(unpadded_tensor.flags)
-            save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=unpadded_tensor, counter=self.counter, word="thresholded")
+            if self.save_intermediate:
+                save_cupy_tensor(
+                    folder_path="applications/segment_everything/downloads/numpy",
+                    tensor=unpadded_tensor,
+                    counter=self.counter,
+                    word="thresholded",
+                    verbose=self.verbose,
+                )
 
-        #cast to uint8 datatype
+        # cast to uint8 datatype
         if self.cast_to_uint8:
             print(unpadded_tensor.flags)
             unpadded_tensor = cp.asarray(unpadded_tensor, dtype=cp.uint8)
-            save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=unpadded_tensor, counter=self.counter, word="casted")
+            if self.save_intermediate:
+                save_cupy_tensor(
+                    folder_path="applications/segment_everything/downloads/numpy",
+                    tensor=unpadded_tensor,
+                    counter=self.counter,
+                    word="casted",
+                    verbose=self.verbose,
+                )
 
+        if self.verbose:
+            print(
+                f"unpadded_tensor tensor, casted to {unpadded_tensor.dtype} and shape {unpadded_tensor.shape}\n"
+            )
 
-        print(f"unpadded_tensor tensor, casted to {unpadded_tensor.dtype} and shape {unpadded_tensor.shape}\n")
-
-        # save the cupy tensor 
-        save_cupy_tensor(folder_path="applications/segment_everything/downloads/numpy", tensor=unpadded_tensor, counter=self.counter, word="unpadded")
-        # self.counter +=1
+        # save the cupy tensor
+        if self.save_intermediate:
+            save_cupy_tensor(
+                folder_path="applications/segment_everything/downloads/numpy",
+                tensor=unpadded_tensor,
+                counter=self.counter,
+                word="unpadded",
+                verbose=self.verbose,
+            )
 
         # Create output message
         # create tensor with 3 dims for vis, by squeezing the tensor in the batch dimension
         unpadded_tensor = cp.squeeze(unpadded_tensor, axis=(0, 1))
-        # convert to unsigned int 8
-        # unpadded_tensor = cp.asarray(unpadded_tensor, dtype=cp.uint8)
-        # put channel dimensions last 
-        # unpadded_tensor = cp.moveaxis(unpadded_tensor, 0, -1)
-        # convert to a color image by using three channels for the same tensor
+
         unpadded_tensor = self.painter.to_rgba(unpadded_tensor)
 
         # unpadded_tensor  = self.mask_to_rgba(unpadded_tensor)
@@ -422,8 +497,6 @@ class PostprocessorOp(Operator):
         for output in self.outputs:
             out_message.add(hs.as_tensor(unpadded_tensor), output)
         op_output.emit(out_message, "out")
-
-
 
     def scale_tensor_with_aspect_ratio(self, tensor, max_size, order=1):
         # assumes tensor dimension (batch, height, width)
@@ -458,14 +531,12 @@ class PostprocessorOp(Operator):
         elif n_dims == 3:
             unpadded_tensor = tensor[:, :height, :width]
         else:
-            raise ValueError('Invalid tensor dimension')
+            raise ValueError("Invalid tensor dimension")
         return unpadded_tensor
 
 
-
-
 class SegmentOneThingApp(Application):
-    def __init__(self, data, source="v4l2"):
+    def __init__(self, data, source="v4l2", save_intermediate=False, verbose=False):
         """Initialize the body pose estimation application"""
 
         super().__init__()
@@ -473,7 +544,8 @@ class SegmentOneThingApp(Application):
         # set name
         self.name = "Segment one thing App"
         self.source = source
-
+        self.verbose = verbose
+        self.save_intermediate = save_intermediate
         if data == "none":
             data = os.path.join(
                 os.environ.get("HOLOSCAN_DATA_PATH", "../data"), "body_pose_estimation"
@@ -484,7 +556,9 @@ class SegmentOneThingApp(Application):
     def compose(self):
         pool = UnboundedAllocator(self, name="pool")
 
-        sink = Sink(self, name="sink")
+        sink = Sink(
+            self, name="sink", save_intermediate=self.save_intermediate, verbose=self.verbose
+        )
 
         if self.source == "v4l2":
             source = V4L2VideoCaptureOp(
@@ -499,6 +573,7 @@ class SegmentOneThingApp(Application):
             self,
             name="transpose",
             pool=pool,
+            verbose=self.verbose,
         )
 
         preprocessor_args = self.kwargs("preprocessor")
@@ -511,7 +586,9 @@ class SegmentOneThingApp(Application):
 
         inference_encoder_args = self.kwargs("inference")
         inference_encoder_args["model_path_map"] = {
-            "encoder": os.path.join("applications", "segment_everything", "engine_fp32", "encoder.engine"), 
+            "encoder": os.path.join(
+                "applications", "segment_everything", "engine_fp32", "encoder.engine"
+            ),
         }
 
         inference = InferenceOp(
@@ -524,13 +601,17 @@ class SegmentOneThingApp(Application):
         decoder_configurator = DecoderConfigurator(
             self,
             allocator=pool,
-            **self.kwargs("decoder_configurator"))
+            save_intermediate=self.save_intermediate,
+            verbose=self.verbose,
+            **self.kwargs("decoder_configurator"),
+        )
         decoder_configurator.decoder_input.print_ndims()
-
 
         inference_decoder_args = self.kwargs("inference_decoder")
         inference_decoder_args["model_path_map"] = {
-            "decoder": os.path.join("applications", "segment_everything", "engine_fp32", "decoder.engine"), 
+            "decoder": os.path.join(
+                "applications", "segment_everything", "engine_fp32", "decoder.engine"
+            ),
         }
         inference_decoder = InferenceOp(
             self,
@@ -539,96 +620,25 @@ class SegmentOneThingApp(Application):
             **inference_decoder_args,
         )
 
-
         postprocessor = PostprocessorOp(
             self,
             name="postprocessor",
             allocator=pool,
+            save_intermediate=self.save_intermediate,
+            verbose=self.verbose,
         )
-
-        # segmentation_postprocessor = SegmentationPostprocessorOp(
-        #     self,
-        #     name="segmentation_postprocessor",
-        #     allocator=pool,
-        #     **self.kwargs("segmentation_postprocessor"),
-        # )
 
         holoviz = HolovizOp(self, allocator=pool, name="holoviz", **self.kwargs("holoviz"))
 
-        # # all connected
-        # self.add_flow(source, holoviz, {(source_output, "receivers")})
-        # self.add_flow(source, preprocessor)
-        # # self.add_flow(preprocessor, holoviz), {("", "receivers")}
-        # self.add_flow(preprocessor, format_input)
-        # # self.add_flow(format_input, holoviz, {("out", "receivers")})
-        # self.add_flow(format_input, inference, {("", "receivers")})
-        # # self.add_flow(preprocessor, inference, {("", "receivers")})
-        # # self.add_flow(inference, postprocessor), {"transmitter", "in"}
-        # self.add_flow(inference, decoder_configurator, {("transmitter", "in")})
-        # self.add_flow(decoder_configurator, inference_decoder, {("out", "receivers")})
-        # # self.add_flow(decoder_configurator, postprocessor, {("out", "in")})
-        # self.add_flow(inference_decoder, postprocessor, {("transmitter", "in")})
-        # self.add_flow(postprocessor, holoviz, {("out", "receivers")})
-
-        # # image flow only
-        # self.add_flow(source, holoviz, {(source_output, "receivers")})
-
-        # image flow and preprocessor
-        # self.add_flow(source, holoviz, {(source_output, "receivers")})
-        # self.add_flow(source, preprocessor)
-        # self.add_flow(preprocessor, format_input)
-        # self.add_flow(format_input, sink)
-
-        # image to encoder
-        # self.add_flow(source, holoviz, {(source_output, "receivers")})
-        # self.add_flow(source, preprocessor)
-        # self.add_flow(preprocessor, format_input)
-        # self.add_flow(format_input, inference, {("", "receivers")})
-        # self.add_flow(inference, sink)
-
-        # up to decoder configurator
-        # self.add_flow(source, holoviz, {(source_output, "receivers")})
-        # self.add_flow(source, preprocessor)
-        # self.add_flow(preprocessor, format_input)
-        # self.add_flow(format_input, inference, {("", "receivers")})
-        # self.add_flow(inference, decoder_configurator, {("transmitter", "in")})
-        # self.add_flow(decoder_configurator, sink)
-
-        # decoder too
-        # self.add_flow(source, holoviz, {(source_output, "receivers")})
-        # self.add_flow(source, preprocessor)
-        # self.add_flow(preprocessor, format_input)
-        # self.add_flow(format_input, inference, {("", "receivers")})
-        # self.add_flow(inference, decoder_configurator, {("transmitter", "in")})
-        # self.add_flow(decoder_configurator, inference_decoder, {("out", "receivers")})
-        # self.add_flow(inference_decoder, sink, {("transmitter", "in")})
-
-        # postprocessing
-        # self.add_flow(source, holoviz, {(source_output, "receivers")})
-        # self.add_flow(source, preprocessor)
-        # self.add_flow(preprocessor, format_input)
-        # self.add_flow(format_input, inference, {("", "receivers")})
-        # self.add_flow(inference, decoder_configurator, {("transmitter", "in")})
-        # self.add_flow(decoder_configurator, inference_decoder, {("out", "receivers")})
-        # self.add_flow(inference_decoder, postprocessor, {("transmitter", "in")})
-        # self.add_flow(postprocessor, segmentation_postprocessor, {("out", "")})
-        # self.add_flow(segmentation_postprocessor, sink, {("", "in")})
-
-        # # Holoviz
+        # Holoviz
         self.add_flow(source, holoviz, {(source_output, "receivers")})
         self.add_flow(source, preprocessor)
         self.add_flow(preprocessor, format_input)
         self.add_flow(format_input, inference, {("", "receivers")})
         self.add_flow(inference, decoder_configurator, {("transmitter", "in")})
         self.add_flow(decoder_configurator, inference_decoder, {("out", "receivers")})
-        # self.add_flow(decoder_configurator, holoviz, {("point", "receivers")})
-
         self.add_flow(inference_decoder, postprocessor, {("transmitter", "in")})
         self.add_flow(postprocessor, holoviz, {("out", "receivers")})
-
-        # self.add_flow(postprocessor, segmentation_postprocessor, {("out", "")})
-        # self.add_flow(segmentation_postprocessor, holoviz, {("", "receivers")})
-
 
 
 if __name__ == "__main__":
@@ -639,9 +649,7 @@ if __name__ == "__main__":
         "--source",
         choices=["v4l2"],
         default="v4l2",
-        help=(
-            "If 'v4l2', uses the v4l2 device specified in the yaml file."
-        ),
+        help=("If 'v4l2', uses the v4l2 device specified in the yaml file."),
     )
     parser.add_argument(
         "-c",
@@ -655,6 +663,11 @@ if __name__ == "__main__":
         default="none",
         help=("Set the data path"),
     )
+
+    parser.add_argument(
+        "-si", "--save_intermediate", action="store_true", help="Save intermediate tensors to disk"
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Print verbose output")
     args = parser.parse_args()
 
     if args.config == "none":
@@ -662,6 +675,6 @@ if __name__ == "__main__":
     else:
         config_file = args.config
 
-    app = SegmentOneThingApp(args.data, args.source)
+    app = SegmentOneThingApp(args.data, args.source, args.save_intermediate, args.verbose)
     app.config(config_file)
     app.run()

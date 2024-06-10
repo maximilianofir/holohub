@@ -33,7 +33,8 @@ RUN pip3 install \
     onnx\
     torch\
     torchvision\
-    torchaudio
+    torchaudio\
+    matplotlib
 # clone the repo of SAM
 RUN git clone https://github.com/facebookresearch/segment-anything.git \
 && cd segment-anything \

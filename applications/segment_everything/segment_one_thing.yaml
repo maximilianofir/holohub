@@ -56,10 +56,6 @@ inference_decoder:
   is_engine_path: true
   enable_fp16: false
 
-# postprocessor:
-#   iou_threshold: 0.5
-#   score_threshold: 0.5
-#   image_dim: 1024
 
 segmentation_postprocessor:  
   in_tensor_name: out
