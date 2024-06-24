@@ -594,11 +594,14 @@ class SegmentOneThingApp(Application):
         )
 
         inference_encoder_args = self.kwargs("inference")
-        inference_encoder_args["model_path_map"] = {
-            "encoder": os.path.join(
-                "applications", "segment_everything", "engine_fp32", "encoder.engine"
-            ),
-        }
+        if "model_path_map" in inference_encoder_args and inference_encoder_args["model_path_map"]:
+            print(inference_encoder_args["model_path_map"])
+        else:
+            inference_encoder_args["model_path_map"] = {
+                "encoder": os.path.join(
+                    "applications", "segment_everything", "engine_fp32", "encoder.engine"
+                ),
+            }
 
         inference = InferenceOp(
             self,
@@ -617,11 +620,14 @@ class SegmentOneThingApp(Application):
         decoder_configurator.decoder_input.print_ndims()
 
         inference_decoder_args = self.kwargs("inference_decoder")
-        inference_decoder_args["model_path_map"] = {
-            "decoder": os.path.join(
-                "applications", "segment_everything", "engine_fp32", "decoder.engine"
-            ),
-        }
+        if "model_path_map" in inference_decoder_args and inference_decoder_args["model_path_map"]:
+            print(inference_decoder_args["model_path_map"])
+        else:
+            inference_decoder_args["model_path_map"] = {
+                "decoder": os.path.join(
+                    "applications", "segment_everything", "engine_fp32", "decoder.engine"
+                ),
+            }
         inference_decoder = InferenceOp(
             self,
             name="inference_decoder",
