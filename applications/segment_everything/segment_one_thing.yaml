@@ -56,12 +56,8 @@ inference_decoder:
   is_engine_path: true
   enable_fp16: false
 
-# postprocessor:
-#   iou_threshold: 0.5
-#   score_threshold: 0.5
-#   image_dim: 1024
 
-segmentation_postprocessor:  
+segmentation_postprocessor:
   in_tensor_name: out
   network_output_type: softmax
   data_format: nchw
@@ -74,13 +70,14 @@ holoviz:
       type: color
       opacity: 0.5
       priority: 0
-    # - name: "point_coords"
-    #   type: points
-    #   color: [1.0, 0.0, 0.0, 1.0]
-    #   point_size: 10
-    #   opacity: 0
+    - name: "point_coords"
+      type: crosses
+      color: [1.0, 1.0, 1.0, 1.0]
+      point_size: 20
+      opacity: 1
+      priority: 1
   color_lut: [
-    [0.65, 0.81, 0.89, 0.5], #RGB for BACKGROUND with light blue & alpha=0.1
+    # [0.65, 0.81, 0.89, 0.5], #RGB for BACKGROUND with light blue & alpha=0.1
     # [0.3, 0.3, 0.9, 0.75], #Blue RGB for SELLA with alpha=0.5
     # [0.9, 0.9, 0.3, 0.75], #Yellow RGB for CLIVAL RECESS alpha=0.5 #https://rgbcolorpicker.com/0-1
     ]

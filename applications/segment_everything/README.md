@@ -1,8 +1,7 @@
 # Segment Everything App
 
 
-Body pose estimation is a computer vision task that involves recognizing specific points on the human body in images or videos.
-A model is used to infer the locations of keypoints from the source video which is then rendered by the visualizer. 
+Segment anything allows computing masks for objects in natural images. In this app it is applied to a videostream.
 
 ## Model
 
@@ -20,4 +19,11 @@ Run the following commands to start the body pose estimation application:
 ./dev_container launch --img holohub:sam
 ./run build segment_everything
 ./run launch segment_everything
+```
+
+## errors 
+Error, not all input dimensions specified.
+``` sh
+[error] [holoinfer_constants.hpp:78] Inference manager, Error in inference setup: Error in Inference Manager, Sub-module->Setting Inference parameters: Error, not all input dimensions specified.
+
 ```
