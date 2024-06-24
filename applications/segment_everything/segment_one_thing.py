@@ -13,10 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
-#sys.path.append("/workspace/volumes/forks/holohub/benchmarks/holoscan_flow_benchmarking")
-#from benchmarked_application import BenchmarkedApplication
-
 import os
 from argparse import ArgumentParser
 import matplotlib.pyplot as plt
