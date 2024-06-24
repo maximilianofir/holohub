@@ -22,7 +22,13 @@ import holoscan as hs
 import numpy as np
 from holoscan.core import Application, Operator, OperatorSpec
 from holoscan.gxf import Entity
-from holoscan.operators import FormatConverterOp, HolovizOp, InferenceOp, V4L2VideoCaptureOp
+from holoscan.operators import (
+    FormatConverterOp,
+    HolovizOp,
+    InferenceOp,
+    V4L2VideoCaptureOp,
+    VideoStreamReplayerOp,
+)
 from holoscan.resources import UnboundedAllocator
 
 
@@ -325,7 +331,7 @@ class PostprocessorOp(Operator):
 
 
 class BodyPoseEstimationApp(Application):
-    def __init__(self, data, source="v4l2"):
+    def __init__(self, data, source="v4l2", video_device="none"):
         """Initialize the body pose estimation application"""
 
         super().__init__()
@@ -340,9 +346,13 @@ class BodyPoseEstimationApp(Application):
             )
 
         self.sample_data_path = data
+        self.video_device = video_device
 
     def compose(self):
         pool = UnboundedAllocator(self, name="pool")
+
+        # Input data type of preprocessor
+        in_dtype = "rgb888"
 
         # Determine if the DDS Publisher is enabled.
         dds_common_args = self.kwargs("dds_common")
@@ -351,13 +361,26 @@ class BodyPoseEstimationApp(Application):
         del dds_publisher_args["enable"]
 
         if self.source == "v4l2":
+            v4l2_args = self.kwargs("v4l2_source")
+            if self.video_device != "none":
+                v4l2_args["device"] = self.video_device
             source = V4L2VideoCaptureOp(
                 self,
                 name="v4l2_source",
                 allocator=pool,
-                **self.kwargs("v4l2_source"),
+                **v4l2_args,
             )
             source_output = "signal"
+            # v4l2 operator outputs RGBA8888
+            in_dtype = "rgba8888"
+        elif self.source == "replayer":
+            source = VideoStreamReplayerOp(
+                self,
+                name="replayer_source",
+                directory=self.sample_data_path,
+                **self.kwargs("replayer_source"),
+            )
+            source_output = "output"
         elif self.source == "dds":
             try:
                 from holohub.dds_video_subscriber import DDSVideoSubscriberOp
@@ -387,6 +410,7 @@ class BodyPoseEstimationApp(Application):
             self,
             name="preprocessor",
             pool=pool,
+            in_dtype=in_dtype,
             **preprocessor_args,
         )
 
@@ -449,11 +473,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "-s",
         "--source",
-        choices=["v4l2", "dds"],
+        choices=["v4l2", "dds", "replayer"],
         default="v4l2",
         help=(
-            "If 'v4l2', uses the v4l2 device specified in the yaml file."
-            "If 'dds', uses the DDS video stream configured in the yaml file."
+            "If 'v4l2', uses the v4l2 device specified in the yaml file or "
+            " --video_device if specified. "
+            "If 'dds', uses the DDS video stream configured in the yaml file. "
+            "If 'replayer', uses video stream replayer."
         ),
     )
     parser.add_argument(
@@ -468,6 +494,13 @@ if __name__ == "__main__":
         default="none",
         help=("Set the data path"),
     )
+    parser.add_argument(
+        "-v",
+        "--video_device",
+        default="none",
+        help=("The video device to use.  By default the application will use /dev/video0"),
+    )
+
     args = parser.parse_args()
 
     if args.config == "none":
@@ -475,6 +508,6 @@ if __name__ == "__main__":
     else:
         config_file = args.config
 
-    app = BodyPoseEstimationApp(args.data, args.source)
+    app = BodyPoseEstimationApp(args.data, args.source, args.video_device)
     app.config(config_file)
     app.run()
