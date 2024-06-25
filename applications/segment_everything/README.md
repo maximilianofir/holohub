@@ -37,13 +37,14 @@ wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/se
 ```
 
 #### run docker container
-Now the pytorch container can be run, mounting the software folder, with an interactive bash:
+Now the pytorch container can be run. Mount the folder that contains the holohub repo, and mount the software folder, with an interactive bash:
 
 ```sh
 docker run --rm -it -v $PWD:/workspace -v /media/m2/software:/workspace/software nvcr.io/nvidia/pytorch:23.04-py3 /bin/bash
 ```
 ##### installation of tensorrt 
 ```sh
+cd /workspace/software/tensorrt
 dpkg -i nv-tensorrt-local-repo-ubuntu2004-8.6.1-cuda-12.0_1.0-1_arm64.deb
 
 cp /var/nv-tensorrt-local-repo-ubuntu2004-8.6.1-cuda-12.0/nv-tensorrt-local-7148CA18-keyring.gpg /usr/share/keyrings/
@@ -62,6 +63,12 @@ dpkg-query -W tensorrt
 
 ## 2. create trt engine files
 
+pull the sam_trt_light repo
+```
+cd /workspace
+git clone https://github.com/maximilianofir/sam_trt_light.git
+```
+
 install the package sam_trt_light
 ```
 cd /workspace/forks/sam_trt_light
@@ -71,6 +78,8 @@ pip install onnxruntime onnx_graphsurgeon colored polygraphy --upgrade
 
 download the models, e,g, sam_vit_b:
 ```
+mkdir downloads
+cd downloads
 wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_b_01ec64.pth
 ```
 I downloaded them to a downloads folder, e.g. "/workspace/sam_trt_light/downloads"
@@ -78,6 +87,7 @@ I downloaded them to a downloads folder, e.g. "/workspace/sam_trt_light/download
 Create folders for the onnx and engine files 
 
 ```
+cd ..
 mkdir onnx engine
 ```
 
@@ -94,18 +104,21 @@ You can use [netron.app](https://netron.app/) to visualize the onnx files. Make 
 
 This application uses a v4l2 compatible device as input.  Please plug in your input device (e.g., webcam) and ensure that `applications/segment_everything/segment_everything.yaml` is set to the corresponding device.  The default input device is set to `/dev/video0`.
 
-## 3. launch application
+## 3. launch application container
 
-Build a holohub container
+Build a holohub container in a new terminal
 ```
 cd holohub
 ./dev_container build --docker_file applications/segment_everything/Dockerfile --img holohub:sam2.1
+```
+launch the dev container and mount the folder that contains holohub and sam_trt_light
+```
 ./dev_container launch --img holohub:sam2.1 --add-volume /media/m2/repos/forks/
 ```
 Adjust the segment_one_thing.yaml file to point to the tet engine files, foe example for the encoder inference block, adjust: 
 ```yaml
   model_path_map:
-    "encoder": "/workspace/volumes/repos/forks/sam_trt_light/engine/encoder.engine"
+    "encoder": "/workspace/volumes/repos/sam_trt_light/engine/encoder.engine"
 ```
 ```sh
 cd /workspace/holohub

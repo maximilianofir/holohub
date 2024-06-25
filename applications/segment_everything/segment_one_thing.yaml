@@ -30,7 +30,7 @@ preprocessor:
 inference:
   backend: "trt"
   model_path_map:
-    "encoder": "/workspace/volumes/repos/forks/sam_trt_light/engine/encoder.engine"
+    "encoder": "/workspace/volumes/repos/sam_trt_light/engine/encoder.engine"
   pre_processor_map:
     "encoder": ["encoder_tensor"]
   inference_map:
@@ -45,7 +45,7 @@ decoder_configurator:
 inference_decoder:
   backend: "trt"
   model_path_map:
-    "decoder": "/workspace/volumes/repos/forks/sam_trt_light/engine/decoder.engine"
+    "decoder": "/workspace/volumes/repos/sam_trt_light/engine/decoder.engine"
   pre_processor_map:
     "decoder": [
       "image_embeddings",

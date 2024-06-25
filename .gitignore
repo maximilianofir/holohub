@@ -19,3 +19,5 @@ aggregate_metadata.json
 .hypothesis/unicode_data/12.1.0/charmap.json.gz
 .local/*
 .vscode/launch.json
+.docker/buildx/.lock
+.bash_history
