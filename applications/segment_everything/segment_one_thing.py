@@ -15,13 +15,13 @@
 
 import os
 from argparse import ArgumentParser
-import matplotlib.pyplot as plt
+from copy import deepcopy
 
 import cupy as cp
 import cupyx.scipy.ndimage
 import holoscan as hs
+import matplotlib.pyplot as plt
 import numpy as np
-from copy import deepcopy
 from holoscan.core import Application, Operator, OperatorSpec
 from holoscan.gxf import Entity
 from holoscan.operators import FormatConverterOp, HolovizOp, InferenceOp, V4L2VideoCaptureOp
@@ -194,7 +194,7 @@ class DecoderConfigurator(Operator):
         # deep copy the point_coords
         copy_point_coords = cp.copy(data["point_coords"])
         # choose the first point
-        copy_point_coords = copy_point_coords[0,0, :]
+        copy_point_coords = copy_point_coords[0, 0, :]
         # Create output message
         out_message = Entity(context)
         for i, output in enumerate(self.outputs):
@@ -263,51 +263,6 @@ class FormatInferenceInputOp(Operator):
     def normalize_image(self, image):
         image = (image - self.mean) / self.std
         return image
-
-
-class Sink(Operator):
-    def __init__(self, *args, save_intermediate=False, verbose=True, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.save_intermediate = save_intermediate
-        self.verbose = verbose
-
-    def setup(self, spec: OperatorSpec):
-        spec.input("in")
-
-    def compute(self, op_input, op_output, context):
-        in_message = op_input.receive("in")
-        if self.verbose:
-            print("----------------------------SINK Start")
-            print(in_message)
-            try:
-                print(type(in_message))
-                if isinstance(in_message, dict):
-                    for key, value in in_message.items():
-                        print(f"{key}: {type(value)}")
-                        try:
-                            tensor = in_message.get(f"{key}")
-                            print(tensor.shape)
-                            print(tensor.dtype)
-                            # get a cupy tensor from the message and save it to a numpy array, using the key
-                            if self.save_intermediate:
-                                try:
-                                    cupy_array = cp.asarray(tensor)
-                                    save_cupy_tensor(
-                                        cupy_array,
-                                        folder_path="applications/segment_everything/downloads/numpy",
-                                        counter=0,
-                                        word=key,
-                                        verbose=self.verbose,
-                                    )
-                                except Exception as e:
-                                    print(f"Could not save cupy array {e}")
-
-                        except Exception as e:
-                            print(f"Could not get key {e}")
-            except Exception as e:
-                print(f"Could not get type, exception {e}")
-
-            print("---------------------------SINK END")
 
 
 class CupyArrayPainter:
@@ -564,10 +519,6 @@ class SegmentOneThingApp(Application):
 
     def compose(self):
         pool = UnboundedAllocator(self, name="pool")
-
-        sink = Sink(
-            self, name="sink", save_intermediate=self.save_intermediate, verbose=self.verbose
-        )
 
         if self.source == "v4l2":
             source = V4L2VideoCaptureOp(

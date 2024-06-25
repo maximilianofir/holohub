@@ -1,13 +1,18 @@
 # Segment Everything App
 
 
-Segment anything allows computing masks for objects in natural images. In this app it is applied to a videostream.
+Segment anything allows computing masks or pre-thresholded outputs for objects in natural images. An output mask is created for each query point. In this app the sam encoder and decoder parts are applied to a videostream.
 
 ## Model
 
-This application uses SAM models from https://github.com/facebookresearch/segment-anything/tree/main#model-checkpoints
+This application uses a sement anything model (SAM) from https://github.com/facebookresearch/segment-anything/tree/main#model-checkpoints
 
 ## Setup
+
+The setup requires three steps. 
+1.  create a pytorch docker container, with a tensorRT version that matches the holoscan tensorRT version. 
+2. Then this container creates the tensorRT engine files.
+3. We create a holoscan container, that mounts the created engine files, and the holohub repository, and runs the application. 
 
 ## 1. pytorch container
 
@@ -37,12 +42,13 @@ wget https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/se
 ```
 
 #### run docker container
-Now the pytorch container can be run. Mount the folder that contains the holohub repo, and mount the software folder, with an interactive bash:
+Now the pytorch container can be run. Mount <HOLOHUB_SOURCE_DIR>, which contains the holohub repo, and mount the software folder, which contains the downloaded trt .deb installation file.
 
 ```sh
 docker run --rm -it -v $PWD:/workspace -v /media/m2/software:/workspace/software nvcr.io/nvidia/pytorch:23.04-py3 /bin/bash
 ```
 ##### installation of tensorrt 
+follow the commandline steps below to install tensorRT and additional packages.
 ```sh
 cd /workspace/software/tensorrt
 dpkg -i nv-tensorrt-local-repo-ubuntu2004-8.6.1-cuda-12.0_1.0-1_arm64.deb
@@ -63,20 +69,21 @@ dpkg-query -W tensorrt
 
 ## 2. create trt engine files
 
-pull the sam_trt_light repo
+In the same docker container we can now proceed with building the trt engine files.
+First, pull the sam_trt_light repo, which contains a script to create the engine files.
 ```
 cd /workspace
 git clone https://github.com/maximilianofir/sam_trt_light.git
 ```
 
-install the package sam_trt_light
+Install the package sam_trt_light, and some additional requirements.
 ```
-cd /workspace/forks/sam_trt_light
+cd /workspace/sam_trt_light
 pip install -e .
 pip install onnxruntime onnx_graphsurgeon colored polygraphy --upgrade
 ```
 
-download the models, e,g, sam_vit_b:
+Download the models, e,g, sam_vit_b:
 ```
 mkdir downloads
 cd downloads
@@ -96,29 +103,29 @@ Run the trt_inference.py script and save the onnx and engine files to the create
 ```
 python scripts/trt_inference.py --checkpoint=/workspace/sam_trt_light/downloads/sam_vit_b_01ec64.pth --input-image=images/apples.jpg --mode point --visualize --output-image=output.png --model-type vit_b --onnx-dir /workspace/sam_trt_light/onnx --engine-dir /workspace/sam_trt_light/engine
 ```
+
+The <MODEL_DIR> is this case is ```/workspace/sam_trt_light/engine```.
 You can use [netron.app](https://netron.app/) to visualize the onnx files. Make sure the datatypes are fp32 for all inputs and outputs.
 
 
-
-## Requirements
-
-This application uses a v4l2 compatible device as input.  Please plug in your input device (e.g., webcam) and ensure that `applications/segment_everything/segment_everything.yaml` is set to the corresponding device.  The default input device is set to `/dev/video0`.
-
 ## 3. launch application container
 
-Build a holohub container in a new terminal
+### Requirements
+This application uses a v4l2 compatible device as input.  Please plug in your input device (e.g., webcam) and ensure that `applications/segment_everything/segment_everything.yaml` is set to the corresponding device.  The default input device is set to `/dev/video0`.
+
+Build a holohub container in a new terminal to launch the segment_anything app.
 ```
-cd holohub
+cd <HOLOHUB_SOURCE_DIR>
 ./dev_container build --docker_file applications/segment_everything/Dockerfile --img holohub:sam2.1
 ```
 launch the dev container and mount the folder that contains holohub and sam_trt_light
 ```
-./dev_container launch --img holohub:sam2.1 --add-volume /media/m2/repos/forks/
+./dev_container launch --img holohub:sam2.1 --add-volume <MODEL_DIR>
 ```
-Adjust the segment_one_thing.yaml file to point to the tet engine files, foe example for the encoder inference block, adjust: 
+Adjust the segment_one_thing.yaml file to point to the trt engine files, for example for the encoder inference block, adjust: 
 ```yaml
   model_path_map:
-    "encoder": "/workspace/volumes/repos/sam_trt_light/engine/encoder.engine"
+    "encoder": "/workspace/engine/encoder.engine"
 ```
 ```sh
 cd /workspace/holohub
