@@ -68,7 +68,6 @@ class DecoderConfigurator(Operator):
             # Get input message
             print(in_message)
             print(in_message.get("image_embeddings"))
-            self.decoder_input.print_ndims()
         data = {
             "image_embeddings": image_tensor,
             "point_coords": cp.asarray(self.decoder_input.point_coords, order="C"),

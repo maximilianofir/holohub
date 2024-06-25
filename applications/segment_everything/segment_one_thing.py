@@ -80,7 +80,6 @@ class SegmentOneThingApp(Application):
             verbose=self.verbose,
             **self.kwargs("decoder_configurator"),
         )
-        decoder_configurator.decoder_input.print_ndims()
 
         inference_decoder_args = self.kwargs("inference_decoder")
         assert (

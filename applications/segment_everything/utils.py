@@ -35,20 +35,18 @@ class DecoderInputData:
         self.orig_im_size = orig_im_size
         self.dtype = dtype
 
-    def print_ndims(self):
-        for key, value in self.__dict__.items():
-            if value is not None:
-                print(f"{key}: {value.ndim}")
 
     def __repr__(self) -> str:
         return f"DecoderInputData(image_embeddings={self.image_embeddings}, point_coords={self.point_coords}, point_labels={self.point_labels}, mask_input={self.mask_input}, has_mask_input={self.has_mask_input}, orig_im_size={self.orig_im_size}), dtype={self.dtype})"
 
     @staticmethod
-    def point_coords(point=None):
+    def point_coords(point=None, label=None):
         if point is None:
             point = (500, 500)
+        if label is None:
+            label = 1
         input_point = np.array([point], dtype=np.float32)
-        input_label = np.array([1], dtype=np.float32)
+        input_label = np.array([label], dtype=np.float32)
         zero_point = np.zeros((1, 2), dtype=np.float32)
         # zero_point = input_point
         negative_label = np.array([-1], dtype=np.float32)
@@ -61,7 +59,7 @@ class DecoderInputData:
         input_point=None, input_label=None, input_box=None, box_labels=None, dtype=np.float32
     ):
 
-        onnx_coord, onnx_label = DecoderInputData.point_coords(input_point)
+        onnx_coord, onnx_label = DecoderInputData.point_coords(input_point, input_label)
         if input_box is not None:
             input_box = input_box.reshape(2, 2)
             onnx_coord = np.concatenate([onnx_coord, input_box], axis=0)[None, :, :]
