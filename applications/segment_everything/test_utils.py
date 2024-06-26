@@ -28,7 +28,7 @@ class TestDecoderInputData:
 
         # check the attributes and their shapes. The dimensions must match the onnx model dimensions until dynamic
         # axes can be used in holoscan.
-        assert decoder_input.has_mask_input.shape == (1., 1., 1., 1.)
+        assert decoder_input.has_mask_input.shape == (1.0, 1.0, 1.0, 1.0)
         assert decoder_input.image_embeddings is None
         assert decoder_input.mask_input.shape == (1, 1, 256, 256)
         assert decoder_input.orig_im_size is None
@@ -37,31 +37,72 @@ class TestDecoderInputData:
         assert decoder_input.point_labels.shape == (1, 2)
         assert np.all(decoder_input.point_labels == np.array([[1, -1]], dtype=dtype))
 
-    @pytest.mark.parametrize("point, dtype, orig_height, orig_width, resized_height, resized_width, expected_coords", [
-        ((500, 500), np.float32, 1024, 1024, 1024, 1024, np.array([[[500, 500], [0, 0]]], dtype=np.float32)),
-        ((500, 500), np.float32, 1024, 1024, 512, 512, np.array([[[250, 250], [0, 0]]], dtype=np.float32)),
-        ((500, 500), np.float32, 1024, 1024, 2048, 2048, np.array([[[1000, 1000], [0, 0]]], dtype=np.float32)),
-        ((500, 500), np.float32, 1024, 1024, 1024, 512, np.array([[[250, 500], [0, 0]]], dtype=np.float32))
-    ])
-    def test_scale_coords_parametrized(self, point, dtype, orig_height, orig_width, resized_height, resized_width, expected_coords):
+    @pytest.mark.parametrize(
+        "point, dtype, orig_height, orig_width, resized_height, resized_width, expected_coords",
+        [
+            (
+                (500, 500),
+                np.float32,
+                1024,
+                1024,
+                1024,
+                1024,
+                np.array([[[500, 500], [0, 0]]], dtype=np.float32),
+            ),
+            (
+                (500, 500),
+                np.float32,
+                1024,
+                1024,
+                512,
+                512,
+                np.array([[[250, 250], [0, 0]]], dtype=np.float32),
+            ),
+            (
+                (500, 500),
+                np.float32,
+                1024,
+                1024,
+                2048,
+                2048,
+                np.array([[[1000, 1000], [0, 0]]], dtype=np.float32),
+            ),
+            (
+                (500, 500),
+                np.float32,
+                1024,
+                1024,
+                1024,
+                512,
+                np.array([[[250, 500], [0, 0]]], dtype=np.float32),
+            ),
+        ],
+    )
+    def test_scale_coords_parametrized(
+        self, point, dtype, orig_height, orig_width, resized_height, resized_width, expected_coords
+    ):
         # test same size, halving, doubling and stretching as coordinate transformations
         decoder_input = DecoderInputData.create_decoder_inputs_from(dtype=dtype, input_point=point)
         scaled_coords = DecoderInputData.scale_coords(
             decoder_input.point_coords,
-            orig_height=orig_height, orig_width=orig_width,
-            resized_height=resized_height, resized_width=resized_width,
-            dtype=dtype
+            orig_height=orig_height,
+            orig_width=orig_width,
+            resized_height=resized_height,
+            resized_width=resized_width,
+            dtype=dtype,
         )
         assert np.all(scaled_coords == expected_coords)
-        
+
 
 @pytest.fixture
 def painter():
     return CupyArrayPainter()
 
+
 @pytest.fixture
 def random_data():
     return (cp.random.rand(10, 10) - 0.5) * 100
+
 
 class TestCupyArrayPainter:
     def test_constructor(self, painter):
