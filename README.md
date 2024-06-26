@@ -6,7 +6,7 @@
 )
 [![Pages](https://img.shields.io/github/actions/workflow/status/nvidia-holoscan/holohub/generate_pages.yml?branch=main&label=Pages)](https://nvidia-holoscan.github.io/holohub/)
 
-[![Applications](https://img.shields.io/badge/Applications-64-59A700)](https://github.com/nvidia-holoscan/holohub/tree/main/applications)
+[![Applications](https://img.shields.io/badge/Applications-65-59A700)](https://github.com/nvidia-holoscan/holohub/tree/main/applications)
 [![Operators](https://img.shields.io/badge/Operators-45-59A700)](https://github.com/nvidia-holoscan/holohub/tree/main/operators)
 [![Tutorials](https://img.shields.io/badge/Tutorials-7-59A700)](https://github.com/nvidia-holoscan/holohub/tree/main/tutorials)
 
@@ -133,10 +133,11 @@ _Make sure you have installed the [prerequisites](#prerequisites) before attempt
 
 Sample applications based on the Holoscan platform may be found under the [applications](./applications/) directory. Sample applications are a subset of the HoloHub applications and are maintained by Holoscan SDK developers to provide a demonstration of the SDK capabilities.
 
-HoloHub provides a convenient `run` script to build and run applications in your development environment. To build all sample applications in your development environment:
+HoloHub provides a convenient `run` script to build and run applications in your development environment.
+To build an application in your development environment:
 
 ```bash
-  ./run build
+  ./run build <application>
 ```
 
 When the build is successful you can [run HoloHub applications](#running-applications).
