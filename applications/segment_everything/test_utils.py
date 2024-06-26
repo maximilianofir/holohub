@@ -3,7 +3,8 @@ import numpy as np
 import cupy as cp
 import os
 import tempfile
-from utils import save_cupy_tensor, DecoderInputData, CupyArrayPainter
+import datetime
+from utils import save_cupy_tensor, DecoderInputData, CupyArrayPainter, PointMover
 
 
 def test_save_cupy_tensor():
@@ -138,3 +139,40 @@ class TestCupyArrayPainter:
         assert rgba_data.max() <= 255
         assert rgba_data.min() >= 0
         assert isinstance(rgba_data, cp.ndarray)
+
+
+class TestPointMover:
+    def test_move_point(self):
+        # create a canvas woth width and height 512, 512
+        canvas = cp.zeros((512, 512))
+        # create a point at (100, 100)
+        center = cp.array([100, 100])
+        radius = 10
+        # create a point mover
+        point_mover = PointMover(
+            width=canvas.shape[0],
+            height=canvas.shape[1],
+            radius=radius,
+            center_x=center[0],
+            center_y=center[1],
+        )
+
+        # create a canvas and update the position of the point with matplotlib
+        start_time = datetime.datetime.now()
+        x_data, y_data = [], []
+
+        def get_next_point():
+            current_time = datetime.datetime.now()
+            time_delta = current_time - start_time
+            time_since_start = time_delta.seconds + time_delta.microseconds / 1e6
+            position = point_mover.get_position(time_since_start)
+            return position
+
+        for i in range(10):
+            position = get_next_point()
+            x_data.append(position[0])
+            y_data.append(position[1])
+
+        # check the position of the point
+        assert x_data is not None
+        assert y_data is not None

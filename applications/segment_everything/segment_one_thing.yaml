@@ -41,6 +41,14 @@ inference:
 decoder_configurator:
   input_point: [200, 800]
 
+point_publisher:
+  point_mover:
+    - "width" : 1024
+      "height": 1024
+      "radius": 100
+      "center_x": 512
+      "center_y": 512
+      "frequency": 0.1
 
 inference_decoder:
   backend: "trt"
@@ -76,7 +84,7 @@ holoviz:
       priority: 0
     - name: "point_coords"
       type: crosses
-      color: [1.0, 1.0, 1.0, 1.0]
+      color: [1.0, 0, 0, 1.0]
       point_size: 20
       opacity: 1
       priority: 1

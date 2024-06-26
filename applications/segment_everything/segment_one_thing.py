@@ -20,7 +20,12 @@ from holoscan.core import Application
 from holoscan.operators import FormatConverterOp, HolovizOp, InferenceOp, V4L2VideoCaptureOp
 from holoscan.resources import UnboundedAllocator
 
-from operators import DecoderConfigurator, SamPostprocessorOp, FormatInferenceInputOp
+from operators import (
+    DecoderConfigurator,
+    SamPostprocessorOp,
+    FormatInferenceInputOp,
+    PointPublisher,
+)
 
 
 class SegmentOneThingApp(Application):
@@ -73,6 +78,17 @@ class SegmentOneThingApp(Application):
             allocator=pool,
             **inference_encoder_args,
         )
+
+        # create a point publisher
+        point_publisher_args = self.kwargs("point_publisher")
+        print(point_publisher_args)
+        point_publisher = PointPublisher(
+            self,
+            name="point_publisher",
+            allocator=pool,
+            **point_publisher_args,
+        )
+
         decoder_configurator = DecoderConfigurator(
             self,
             allocator=pool,
@@ -107,6 +123,8 @@ class SegmentOneThingApp(Application):
         self.add_flow(source, preprocessor)
         self.add_flow(preprocessor, format_input)
         self.add_flow(format_input, inference, {("", "receivers")})
+
+        self.add_flow(point_publisher, decoder_configurator, {("out", "point_in")})
         self.add_flow(inference, decoder_configurator, {("transmitter", "in")})
         self.add_flow(decoder_configurator, inference_decoder, {("out", "receivers")})
         # point visualization

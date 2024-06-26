@@ -6,7 +6,8 @@ import holoscan as hs
 from holoscan.core import Operator, OperatorSpec
 from holoscan.gxf import Entity
 
-from utils import save_cupy_tensor, DecoderInputData, CupyArrayPainter
+import datetime
+from utils import save_cupy_tensor, DecoderInputData, CupyArrayPainter, PointMover
 
 
 class DecoderConfigurator(Operator):
@@ -46,11 +47,20 @@ class DecoderConfigurator(Operator):
 
     def setup(self, spec: OperatorSpec):
         spec.input("in")
+        spec.input("point_in")
         spec.output("out")
         spec.output("point")
 
     def compute(self, op_input, op_output, context):
         in_message = op_input.receive("in")
+        in_point = op_input.receive("point_in")
+        in_point = cp.asarray(in_point.get("point_coords"), order="C").get()[0]
+        print(in_point)
+        print(f"shape of input: {in_point.shape}")
+        # update the point in the decoder input
+        self.decoder_input.point_coords, self.decoder_input.point_labels = (
+            DecoderInputData.point_coords(point=in_point)
+        )
 
         image_tensor = cp.asarray(in_message.get("image_embeddings"), order="C")
         if self.save_intermediate:
@@ -79,6 +89,14 @@ class DecoderConfigurator(Operator):
         copy_point_coords = cp.copy(data["point_coords"])
         # choose the first point
         copy_point_coords = copy_point_coords[0, 0, :]
+        copy_point_coords = DecoderInputData.scale_coords(
+            copy_point_coords,
+            orig_height=1024,
+            orig_width=1024,
+            resized_height=1,
+            resized_width=1,
+            dtype=np.float32,
+        )
         # Create output message
         out_message = Entity(context)
         for i, output in enumerate(self.outputs):
@@ -348,3 +366,31 @@ class SamPostprocessorOp(Operator):
         else:
             raise ValueError("Invalid tensor dimension")
         return unpadded_tensor
+
+
+class PointPublisher(Operator):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.start_time = datetime.datetime.now()
+        point_mover_kwargs = kwargs["point_mover"]
+        print(point_mover_kwargs[0])
+        self.point_mover = PointMover(**point_mover_kwargs[0])
+
+    def setup(self, spec: OperatorSpec):
+        spec.output("out")
+
+    def compute(self, op_input, op_output, context):
+        # Get current time
+        current_time = datetime.datetime.now()
+        # Calculate time difference
+        time_diff = current_time - self.start_time
+        # as seconds and microseconds
+        time_since_start = time_diff.seconds + time_diff.microseconds / 1e6
+        # Get position of the point
+        print(time_since_start)
+        position = self.point_mover.get_position(time_since_start)
+        print(position)
+        # Create output message
+        out_message = Entity(context)
+        out_message.add(hs.as_tensor(cp.array([position], dtype=cp.float32)), "point_coords")
+        op_output.emit(out_message, "out")

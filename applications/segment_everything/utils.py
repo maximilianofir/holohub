@@ -1,4 +1,5 @@
 import os
+import math
 import cupy as cp
 import numpy as np
 from copy import deepcopy
@@ -35,7 +36,6 @@ class DecoderInputData:
         self.orig_im_size = orig_im_size
         self.dtype = dtype
 
-
     def __repr__(self) -> str:
         return f"DecoderInputData(image_embeddings={self.image_embeddings}, point_coords={self.point_coords}, point_labels={self.point_labels}, mask_input={self.mask_input}, has_mask_input={self.has_mask_input}, orig_im_size={self.orig_im_size}), dtype={self.dtype})"
 
@@ -50,6 +50,8 @@ class DecoderInputData:
         zero_point = np.zeros((1, 2), dtype=np.float32)
         # zero_point = input_point
         negative_label = np.array([-1], dtype=np.float32)
+        print(input_point)
+        print(zero_point)
         coord = np.concatenate((input_point, zero_point), axis=0)[None, :, :]
         label = np.concatenate((input_label, negative_label), axis=0)[None, :]
         return coord, label
@@ -124,3 +126,36 @@ class CupyArrayPainter:
         normalized_data = self.normalize_data(data)
         rgba_image = self.apply_colormap(normalized_data)
         return rgba_image
+
+
+class PointMover:
+    def __init__(self, width, height, radius, center_x, center_y, frequency=1):
+        self.width = width
+        self.height = height
+        self.radius = radius
+        self.center_x = center_x
+        self.center_y = center_y
+        self.frequency = frequency
+
+    def get_position(self, time):
+        """
+        Compute the position of the point at a given time.
+
+        :param time: The time parameter, in seconds.
+        :return: (x, y) tuple representing the coordinates on the 2D canvas.
+        """
+        # Calculate the angle based on time
+        # the circle frequency can be adjusted, and is in Hz
+        circular_frequency = self.frequency
+        # the angle is computed based on the circular frequency and time
+        angle = 2 * math.pi * circular_frequency * time
+
+        # Calculate the x and y coordinates based on the angle
+        x = self.center_x + self.radius * math.cos(angle)
+        y = self.center_y + self.radius * math.sin(angle)
+
+        # Ensure the point stays within the canvas boundaries
+        x = min(max(x, 0), self.width)
+        y = min(max(y, 0), self.height)
+
+        return (x, y)
