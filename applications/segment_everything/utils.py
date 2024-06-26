@@ -1,9 +1,10 @@
-import os
 import math
-import cupy as cp
-import numpy as np
+import os
 from copy import deepcopy
+
+import cupy as cp
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def save_cupy_tensor(tensor, folder_path, counter=0, word="", verbose=False):
@@ -50,8 +51,6 @@ class DecoderInputData:
         zero_point = np.zeros((1, 2), dtype=np.float32)
         # zero_point = input_point
         negative_label = np.array([-1], dtype=np.float32)
-        print(input_point)
-        print(zero_point)
         coord = np.concatenate((input_point, zero_point), axis=0)[None, :, :]
         label = np.concatenate((input_label, negative_label), axis=0)[None, :]
         return coord, label

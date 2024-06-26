@@ -5,7 +5,7 @@ Segment anything allows computing masks or pre-thresholded outputs for objects i
 
 ## Model
 
-This application uses a sement anything model (SAM) from https://github.com/facebookresearch/segment-anything/tree/main#model-checkpoints
+This application uses a segment anything model (SAM) from https://github.com/facebookresearch/segment-anything/tree/main#model-checkpoints
 
 ## Setup
 

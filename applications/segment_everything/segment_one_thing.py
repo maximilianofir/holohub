@@ -22,9 +22,9 @@ from holoscan.resources import UnboundedAllocator
 
 from operators import (
     DecoderConfigurator,
-    SamPostprocessorOp,
     FormatInferenceInputOp,
     PointPublisher,
+    SamPostprocessorOp,
 )
 
 
@@ -81,7 +81,6 @@ class SegmentOneThingApp(Application):
 
         # create a point publisher
         point_publisher_args = self.kwargs("point_publisher")
-        print(point_publisher_args)
         point_publisher = PointPublisher(
             self,
             name="point_publisher",

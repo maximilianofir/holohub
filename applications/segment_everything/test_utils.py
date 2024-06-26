@@ -1,10 +1,11 @@
-import pytest
-import numpy as np
-import cupy as cp
+import datetime
 import os
 import tempfile
-import datetime
-from utils import save_cupy_tensor, DecoderInputData, CupyArrayPainter, PointMover
+
+import cupy as cp
+import numpy as np
+import pytest
+from utils import CupyArrayPainter, DecoderInputData, PointMover, save_cupy_tensor
 
 
 def test_save_cupy_tensor():
@@ -143,7 +144,7 @@ class TestCupyArrayPainter:
 
 class TestPointMover:
     def test_move_point(self):
-        # create a canvas woth width and height 512, 512
+        # create a canvas with width and height 512, 512
         canvas = cp.zeros((512, 512))
         # create a point at (100, 100)
         center = cp.array([100, 100])
